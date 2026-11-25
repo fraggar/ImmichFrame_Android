@@ -1,5 +1,7 @@
 # Fork only (not for the upstream PR): builds a debug APK on every push, downloadable from the run's
 # "Artifacts" section. Debug-signed, so it installs only after the official ImmichFrame is uninstalled.
+# Signing key: secret DEBUG_KEYSTORE_B64 (base64 of a debug.keystore, store/key password "android",
+# alias "androiddebugkey"), so successive builds update each other in place.
 name: Build debug APK
 
 on:
@@ -16,6 +18,18 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
+      # A fresh runner generates a new debug key on every run, and Android refuses to update an app
+      # whose signature changed. A fixed key from the secret keeps `adb install -r` (and the settings) working.
+      - name: Fixed debug signing key
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            printf '%s' "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          else
+            echo "::warning::secret DEBUG_KEYSTORE_B64 not set: random debug key, uninstall before each install"
+          fi
       - name: Build
         run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
