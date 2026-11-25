@@ -13,11 +13,14 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.RelativeSizeSpan
@@ -238,6 +241,8 @@ class MainActivity : AppCompatActivity() {
      * Opens the app set in "Launch App on Start" once per process start, then brings this
      * activity back. For apps that must run but aren't started at boot on some devices, e.g. a
      * VPN app on Android 6 photo frames, where opening the app restores its tunnel.
+     * Waits for a validated network first: right after boot Wi-Fi isn't up yet, and a VPN app
+     * started then may fail to resolve its endpoint and give up.
      */
     private fun launchAppOnStart() {
         if (appLaunchedOnStart) return
@@ -250,23 +255,39 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Launch App on Start: $pkg not found", Toast.LENGTH_LONG).show()
             return
         }
-        try {
-            startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: Exception) {
-            Toast.makeText(this, "Launch App on Start: ${e.message}", Toast.LENGTH_LONG).show()
-            return
-        }
-        handler.postDelayed({
+        lifecycleScope.launch {
+            val deadline = SystemClock.elapsedRealtime() + APP_ON_START_NETWORK_WAIT_MS
+            while (!isNetworkValidated() && SystemClock.elapsedRealtime() < deadline) {
+                delay(2_000)
+            }
+            delay(APP_ON_START_SETTLE_MS)
+            try {
+                startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Launch App on Start: ${e.message}", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            delay(APP_ON_START_RETURN_MS)
             startActivity(
                 Intent(applicationContext, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             )
-        }, APP_ON_START_RETURN_MS)
+        }
+    }
+
+    /** True when the default network has working internet (Android's connectivity check passed). */
+    private fun isNetworkValidated(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     companion object {
         /** Process-wide: true once "Launch App on Start" ran, so it runs once per boot or app restart. */
         private var appLaunchedOnStart = false
+        private const val APP_ON_START_NETWORK_WAIT_MS = 180_000L
+        private const val APP_ON_START_SETTLE_MS = 3_000L
         private const val APP_ON_START_RETURN_MS = 8_000L
     }
 
