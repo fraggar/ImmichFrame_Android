@@ -230,7 +230,44 @@ class MainActivity : AppCompatActivity() {
             settingsLauncher.launch(intent)
         } else {
             loadSettings()
+            launchAppOnStart()
         }
+    }
+
+    /**
+     * Opens the app set in "Launch App on Start" once per process start, then brings this
+     * activity back. For apps that must run but aren't started at boot on some devices, e.g. a
+     * VPN app on Android 6 photo frames, where opening the app restores its tunnel.
+     */
+    private fun launchAppOnStart() {
+        if (appLaunchedOnStart) return
+        appLaunchedOnStart = true
+        val pkg = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+            .getString("launchAppOnStart", "")?.trim().orEmpty()
+        if (pkg.isEmpty() || pkg == packageName) return
+        val launch = packageManager.getLaunchIntentForPackage(pkg)
+        if (launch == null) {
+            Toast.makeText(this, "Launch App on Start: $pkg not found", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Launch App on Start: ${e.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+        handler.postDelayed({
+            startActivity(
+                Intent(applicationContext, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            )
+        }, APP_ON_START_RETURN_MS)
+    }
+
+    companion object {
+        /** Process-wide: true once "Launch App on Start" ran, so it runs once per boot or app restart. */
+        private var appLaunchedOnStart = false
+        private const val APP_ON_START_RETURN_MS = 8_000L
     }
 
     private fun showImage(imageResponse: Helpers.ImageResponse) {

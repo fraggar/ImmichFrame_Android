@@ -53,6 +53,12 @@
             android:defaultValue=""
             android:key="androidSettings"
             android:title="Launch Android Settings" />
+        <EditTextPreference
+            android:defaultValue=""
+            android:inputType="text"
+            android:key="launchAppOnStart"
+            android:summary="Package name of an app to open once when ImmichFrame starts, e.g. a VPN app on devices that don't start it at boot (com.wireguard.android). ImmichFrame comes back after a few seconds. Empty: off."
+            android:title="Launch App on Start" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="Interactions">
