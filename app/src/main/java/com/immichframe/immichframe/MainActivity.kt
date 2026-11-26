@@ -241,8 +241,10 @@ class MainActivity : AppCompatActivity() {
      * Opens the app set in "Launch App on Start" once per process start, then brings this
      * activity back. For apps that must run but aren't started at boot on some devices, e.g. a
      * VPN app on Android 6 photo frames, where opening the app restores its tunnel.
-     * Waits for a validated network first: right after boot Wi-Fi isn't up yet, and a VPN app
-     * started then may fail to resolve its endpoint and give up.
+     * Waits for a validated network and a plausible clock first: right after boot Wi-Fi isn't up
+     * yet, and a VPN app started then may fail to resolve its endpoint and give up. Frames without
+     * a battery-backed clock boot with an old date until network time is set; WireGuard servers
+     * reject handshakes with old timestamps, and a full tunnel would then also block the time sync.
      */
     private fun launchAppOnStart() {
         if (appLaunchedOnStart) return
@@ -257,7 +259,9 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             val deadline = SystemClock.elapsedRealtime() + APP_ON_START_NETWORK_WAIT_MS
-            while (!isNetworkValidated() && SystemClock.elapsedRealtime() < deadline) {
+            while ((!isNetworkValidated() || !isClockPlausible()) &&
+                SystemClock.elapsedRealtime() < deadline
+            ) {
                 delay(2_000)
             }
             delay(APP_ON_START_SETTLE_MS)
@@ -283,7 +287,12 @@ class MainActivity : AppCompatActivity() {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
+    /** False while the clock still shows a boot default far in the past (no network time yet). */
+    private fun isClockPlausible(): Boolean = System.currentTimeMillis() >= MIN_PLAUSIBLE_TIME_MS
+
     companion object {
+        /** 2025-01-01T00:00:00Z: any earlier clock reading is a boot default, not real time. */
+        private const val MIN_PLAUSIBLE_TIME_MS = 1_735_689_600_000L
         /** Process-wide: true once "Launch App on Start" ran, so it runs once per boot or app restart. */
         private var appLaunchedOnStart = false
         private const val APP_ON_START_NETWORK_WAIT_MS = 180_000L
